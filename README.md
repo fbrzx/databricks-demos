@@ -115,7 +115,8 @@ serve everything from http://localhost:8000 — see below.)
 
    The root `package.json` delegates its build to `frontend/`, so Databricks
    Apps can build the Vite frontend from the Git folder before starting the
-   FastAPI app.
+   FastAPI app. If the deployment starts without `frontend/dist`, `backend.run`
+   also builds the frontend once at startup before launching FastAPI.
 
 3. **Attach the Genie Space resource** in the app's **Edit** screen:
    **+ Add resource → Genie Space**, pick your space, permission **Can run**,
@@ -133,8 +134,9 @@ Useful deploy targets:
   Git folder path without local sync.
 - `make deploy-logs` follows Databricks app logs.
 
-The app starts via the `command` in `app.yaml`; `backend.run` reads
-`DATABRICKS_APP_PORT` in Databricks and falls back to port 8000 locally.
+The app starts via the `command` in `app.yaml`; `backend.run` ensures
+`frontend/dist` exists, reads `DATABRICKS_APP_PORT` in Databricks, and falls
+back to port 8000 locally.
 
 ## API
 

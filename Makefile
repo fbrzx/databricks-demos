@@ -117,6 +117,14 @@ deploy-info: ## Show Databricks deployment settings
 deploy-check: ## Verify Databricks CLI authentication
 	databricks $(DBX_PROFILE_ARG) current-user me >/dev/null
 
+.PHONY: auth-login
+auth-login: ## Login to Databricks CLI using .env host/profile settings
+	@if [ -z "$$DATABRICKS_HOST" ]; then \
+		echo "DATABRICKS_HOST is not set. Add it to .env or run databricks auth login manually."; \
+		exit 1; \
+	fi
+	databricks $(DBX_PROFILE_ARG) auth login --host "$$DATABRICKS_HOST"
+
 .PHONY: deploy-stage
 deploy-stage: build ## Build and stage deployable files in /tmp
 	rm -rf "$(DEPLOY_STAGE)"
