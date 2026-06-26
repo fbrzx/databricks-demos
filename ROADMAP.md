@@ -47,6 +47,12 @@ Completed:
   topnav, skeleton loading, hover animations, and sticky bundle-export tray.
 - 2026-06-26: Added report assembly UI — checkbox per result, select-all,
   sticky Export PDF / Export PPTX tray when reports are selected.
+- 2026-06-26: Added multi-chat report sessions with stable selected-report
+  assembly, footer cancel, auto-close after bundle download, and in-chat
+  response progress tracking.
+- 2026-06-26: Adjusted frontend terminology from reports to insights for
+  LLM-generated commentary/material, and added the missing `python-pptx`
+  dependency for PowerPoint exports.
 
 Next development slice:
 

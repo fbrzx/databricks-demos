@@ -176,7 +176,10 @@ def post_export(req: ExportRequest):
 
 @app.post("/api/export/pdf")
 def post_export_pdf(req: PdfExportRequest):
-    content = exporters.to_pdf_report(req.model_dump())
+    try:
+        content = exporters.to_pdf_report(req.model_dump())
+    except Exception as exc:  # noqa: BLE001 - export libraries / malformed data
+        raise _export_http_exception(exc)
     base = (
         _safe_filename(req.filename or req.title)
         or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
@@ -191,7 +194,10 @@ def post_export_pdf(req: PdfExportRequest):
 
 @app.post("/api/export/pptx")
 def post_export_pptx(req: PdfExportRequest):
-    content = exporters.to_pptx_report(req.model_dump())
+    try:
+        content = exporters.to_pptx_report(req.model_dump())
+    except Exception as exc:  # noqa: BLE001 - export libraries / malformed data
+        raise _export_http_exception(exc)
     base = (
         _safe_filename(req.filename or req.title)
         or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
@@ -209,20 +215,41 @@ def post_export_bundle(req: BundleExportRequest):
         _safe_filename(req.filename) or f"genie-bundle-{datetime.now():%Y%m%d-%H%M%S}"
     )
     if req.format == "pptx":
-        content = exporters.to_pptx_bundle(req.reports)
+        try:
+            content = exporters.to_pptx_bundle(req.reports)
+        except Exception as exc:  # noqa: BLE001 - export libraries / malformed data
+            raise _export_http_exception(exc)
         media = (
             "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
         name = f"{base}.pptx"
-    else:
-        content = exporters.to_pdf_bundle(req.reports)
+    elif req.format == "pdf":
+        try:
+            content = exporters.to_pdf_bundle(req.reports)
+        except Exception as exc:  # noqa: BLE001 - export libraries / malformed data
+            raise _export_http_exception(exc)
         media = "application/pdf"
         name = f"{base}.pdf"
+    else:
+        raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'.")
     return Response(
         content=content,
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+def _export_http_exception(exc: Exception) -> HTTPException:
+    if isinstance(exc, ModuleNotFoundError):
+        missing = "python-pptx" if exc.name == "pptx" else exc.name
+        return HTTPException(
+            status_code=500,
+            detail=(
+                f"Export dependency missing: {missing}. Run "
+                "`pip install -r requirements.txt` and restart the app."
+            ),
+        )
+    return HTTPException(status_code=500, detail=f"Export failed: {exc}")
 
 
 def _safe_filename(name: str | None) -> str | None:

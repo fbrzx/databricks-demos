@@ -38,7 +38,7 @@ export async function exportResult(columns, rows, format, filename) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.detail || "Export failed");
   }
-  await downloadResponse(r, `report.${format}`);
+  await downloadResponse(r, `insight.${format}`);
 }
 
 export async function exportReportPdf(report, filename) {
@@ -51,7 +51,7 @@ export async function exportReportPdf(report, filename) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.detail || "PDF export failed");
   }
-  await downloadResponse(r, "report.pdf");
+  await downloadResponse(r, "insight.pdf");
 }
 
 export async function exportReportPptx(report, filename) {
@@ -64,7 +64,7 @@ export async function exportReportPptx(report, filename) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.detail || "PPTX export failed");
   }
-  await downloadResponse(r, "report.pptx");
+  await downloadResponse(r, "insight.pptx");
 }
 
 export async function exportBundle(reports, format, filename) {
@@ -77,7 +77,7 @@ export async function exportBundle(reports, format, filename) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.detail || "Bundle export failed");
   }
-  await downloadResponse(r, `genie-bundle.${format}`);
+  await downloadResponse(r, `genie-insight-pack.${format}`);
 }
 
 async function downloadResponse(response, fallbackName) {

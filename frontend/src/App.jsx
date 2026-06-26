@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getConfig,
   getSuggestions,
@@ -10,17 +10,36 @@ import {
 } from "./api.js";
 import ResultView from "./ResultView.jsx";
 
+const REPORT_PROGRESS_STEPS = [
+  {
+    title: "Preparing prompt",
+    detail: "Packaging the question and current chat context.",
+  },
+  {
+    title: "Asking Genie",
+    detail: "Waiting for the workspace to return SQL and data.",
+  },
+  {
+    title: "Building preview",
+    detail: "Normalizing the answer, table, chart, and narrative.",
+  },
+  {
+    title: "Ready shortly",
+    detail: "Finalizing the insight for review.",
+  },
+];
+
 export default function App() {
   const [question, setQuestion] = useState("");
-  const [conversationId, setConversationId] = useState(null);
-  const [history, setHistory] = useState([]); // [{question, result}]
+  const [session, setSession] = useState(() => createSession());
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [appConfig, setAppConfig] = useState(null);
   const [spaceConfigured, setSpaceConfigured] = useState(true);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
-  const [selected, setSelected] = useState(new Set()); // indices selected for bundle
+  const [selected, setSelected] = useState(new Set()); // insight IDs selected for bundle
   const [bundleExporting, setBundleExporting] = useState(null);
   const [bundleError, setBundleError] = useState(null);
 
@@ -34,56 +53,154 @@ export default function App() {
       .finally(() => setSuggestionsLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!loading || !progress) return undefined;
+
+    const timer = setInterval(() => {
+      setProgress((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          stepIndex: Math.min(
+            current.stepIndex + 1,
+            REPORT_PROGRESS_STEPS.length - 1
+          ),
+        };
+      });
+    }, 1600);
+
+    return () => clearInterval(timer);
+  }, [loading, progress?.requestId]);
+
+  const activeChat = useMemo(
+    () =>
+      session.chats.find((chat) => chat.id === session.activeChatId) ??
+      session.chats[0],
+    [session]
+  );
+  const allReports = useMemo(
+    () =>
+      session.chats.flatMap((chat) =>
+        chat.history.map((turn) => ({
+          ...turn,
+          chatId: chat.id,
+          chatTitle: chat.title,
+        }))
+      ),
+    [session.chats]
+  );
+  const selectedReports = useMemo(
+    () => allReports.filter((turn) => selected.has(turn.id)),
+    [allReports, selected]
+  );
+  const totalReports = allReports.length;
+  const selectedCount = selectedReports.length;
+  const sessionHasWork = totalReports > 0 || session.chats.length > 1 || loading;
+  const pendingForActiveChat = progress?.chatId === activeChat?.id;
+
   async function submit(input) {
     const card = input?.card;
     const text = card ? "" : (input?.question ?? question).trim();
-    if ((!card && !text) || loading) return;
+    const chat = activeChat;
+    if (!chat || (!card && !text) || loading) return;
+
+    const promptLabel = card ? card.title : text;
+    const requestId = makeId("request");
+
     setLoading(true);
+    setProgress({
+      chatId: chat.id,
+      promptLabel,
+      requestId,
+      stepIndex: 0,
+    });
     setError(null);
     try {
       const result = await createReport({
         question: card ? null : text,
         cardId: card?.id,
-        conversationId,
+        conversationId: chat.conversationId,
         visualType: card?.visual_type,
       });
-      setConversationId(result.conversation_id);
-      setHistory((h) => [...h, { question: card ? card.title : text, result }]);
+      const insightId = makeId("insight");
+      setSession((current) => ({
+        ...current,
+        chats: current.chats.map((item) => {
+          if (item.id !== chat.id) return item;
+          return {
+            ...item,
+            conversationId: result.conversation_id ?? item.conversationId,
+            title: item.history.length ? item.title : titleForChat(promptLabel),
+            history: [
+              ...item.history,
+              { id: insightId, question: promptLabel, result },
+            ],
+          };
+        }),
+      }));
+      setSelected((current) => {
+        const next = new Set(current);
+        next.add(insightId);
+        return next;
+      });
       setQuestion("");
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
-  function reset() {
-    setConversationId(null);
-    setHistory([]);
+  function closeSession() {
+    setSession(createSession());
+    setQuestion("");
+    setLoading(false);
+    setProgress(null);
     setError(null);
     setSelected(new Set());
     setBundleError(null);
+    setBundleExporting(null);
   }
 
-  function toggleSelect(idx) {
+  function startNewChat() {
+    if (loading) return;
+    const chat = createChat(session.chats.length + 1);
+    setSession((current) => ({
+      ...current,
+      activeChatId: chat.id,
+      chats: [...current.chats, chat],
+    }));
+    setQuestion("");
+    setError(null);
+  }
+
+  function switchChat(id) {
+    setSession((current) => ({ ...current, activeChatId: id }));
+    setQuestion("");
+    setError(null);
+  }
+
+  function toggleSelect(reportId) {
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
+      next.has(reportId) ? next.delete(reportId) : next.add(reportId);
       return next;
     });
   }
 
   function selectAll() {
-    setSelected(new Set(history.map((_, i) => i)));
+    setSelected(new Set(allReports.map((turn) => turn.id)));
   }
 
   async function exportBundleAs(format) {
-    const reports = [...selected].sort().map((i) => history[i].result);
+    const reports = selectedReports.map((turn) => turn.result);
     if (!reports.length) return;
     setBundleExporting(format);
     setBundleError(null);
     try {
-      await exportBundle(reports, format, "genie-report-bundle");
+      await exportBundle(reports, format, "genie-insight-pack");
+      closeSession();
     } catch (e) {
       setBundleError(e.message);
     } finally {
@@ -93,7 +210,6 @@ export default function App() {
 
   const workspaceLabel = formatWorkspace(appConfig?.workspace_host);
   const spaceLabel = shortSpaceId(appConfig?.space_id);
-  const selectedCount = selected.size;
 
   return (
     <div className="app-shell">
@@ -106,7 +222,7 @@ export default function App() {
             <rect x="3" y="14" width="7" height="7" rx="1" fill="currentColor" opacity="0.6"/>
             <rect x="14" y="14" width="7" height="7" rx="1" fill="currentColor" opacity="0.9"/>
           </svg>
-          <span className="topnav-wordmark">Genie Reports</span>
+          <span className="topnav-wordmark">Genie Insights</span>
         </div>
 
         <div className="topnav-right">
@@ -117,8 +233,10 @@ export default function App() {
               {spaceLabel && <span className="space-mono">{spaceLabel}</span>}
             </div>
           )}
-          {history.length > 0 && (
-            <button className="btn ghost sm" onClick={reset}>New session</button>
+          {sessionHasWork && (
+            <button className="btn ghost sm" onClick={closeSession} disabled={loading}>
+              New session
+            </button>
           )}
         </div>
       </nav>
@@ -126,9 +244,9 @@ export default function App() {
       <main className="app-main">
         {/* ── Page heading ──────────────────────────────────────────────── */}
         <header className="page-header">
-          <h1>Report Builder</h1>
+          <h1>Insight Builder</h1>
           <p className="page-subtitle">
-            Ask questions in plain English, explore results, then export a polished deck.
+            Ask questions in plain English, collect commentary and data, then export selected material.
           </p>
         </header>
 
@@ -140,12 +258,61 @@ export default function App() {
           </div>
         )}
 
+        {sessionHasWork && (
+          <section className="session-strip" aria-label="Current insight session">
+            <div className="session-summary">
+              <span className="session-label">Session material</span>
+              <strong>
+                {totalReports} insight{totalReports !== 1 ? "s" : ""}
+              </strong>
+              <span>
+                {session.chats.length} chat{session.chats.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <button
+              className="btn sm"
+              onClick={startNewChat}
+              disabled={loading}
+            >
+              New chat
+            </button>
+          </section>
+        )}
+
+        {sessionHasWork && (
+          <div className="chat-tabs" role="tablist" aria-label="Chats in this session">
+            {session.chats.map((chat) => {
+              const isActive = chat.id === activeChat?.id;
+              const isWorking = progress?.chatId === chat.id;
+              return (
+                <button
+                  key={chat.id}
+                  className={`chat-tab ${isActive ? "active" : ""}`}
+                  onClick={() => switchChat(chat.id)}
+                  role="tab"
+                  aria-selected={isActive}
+                >
+                  <span className="chat-tab-title">{chat.title}</span>
+                  <span className="chat-tab-meta">
+                    {chat.history.length} insight{chat.history.length !== 1 ? "s" : ""}
+                    {isWorking ? " / working" : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* ── Ask bar ───────────────────────────────────────────────────── */}
         <div className="ask-section">
           <div className="ask-bar">
             <input
               className="ask-input"
-              placeholder={conversationId ? "Ask a follow-up…" : "Ask Genie anything…"}
+              placeholder={
+                activeChat?.conversationId
+                  ? "Ask a follow-up..."
+                  : "Ask Genie anything..."
+              }
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -157,7 +324,7 @@ export default function App() {
               disabled={loading || !question.trim()}
             >
               {loading ? <span className="spinner" /> : null}
-              {loading ? "Thinking…" : conversationId ? "Follow up" : "Ask"}
+              {loading ? "Generating..." : activeChat?.conversationId ? "Follow up" : "Ask"}
             </button>
           </div>
         </div>
@@ -165,7 +332,7 @@ export default function App() {
         {error && <div className="banner error">{error}</div>}
 
         {/* ── Suggestion gallery (empty state) ─────────────────────────── */}
-        {history.length === 0 && (
+        {activeChat?.history.length === 0 && !pendingForActiveChat && (
           <section className="suggestion-section" aria-labelledby="suggestions-title">
             {suggestionsLoading ? (
               <div className="skeleton-grid">
@@ -174,7 +341,7 @@ export default function App() {
             ) : suggestions.length > 0 ? (
               <>
                 <div className="section-label">
-                  <span>Suggested reports</span>
+                  <span>Suggested starters</span>
                   <span className="badge">{suggestions.length}</span>
                 </div>
                 <div className="suggestion-grid">
@@ -197,15 +364,16 @@ export default function App() {
           </section>
         )}
 
-        {/* ── Report thread ─────────────────────────────────────────────── */}
-        {history.length > 0 && (
+        {/* ── Insight thread ────────────────────────────────────────────── */}
+        {(activeChat?.history.length > 0 || pendingForActiveChat) && (
           <>
             <div className="thread-header">
               <span className="thread-label">
-                {history.length} report{history.length !== 1 ? "s" : ""} in session
+                {activeChat.title} / {activeChat.history.length} insight
+                {activeChat.history.length !== 1 ? "s" : ""}
               </span>
               <div className="thread-actions">
-                {selectedCount < history.length && (
+                {selectedCount < totalReports && (
                   <button className="btn ghost sm" onClick={selectAll}>Select all</button>
                 )}
                 {selectedCount > 0 && (
@@ -215,16 +383,16 @@ export default function App() {
             </div>
 
             <div className="thread">
-              {history.map((turn, i) => (
-                <div key={i} className={`turn ${selected.has(i) ? "turn-selected" : ""}`}>
+              {activeChat.history.map((turn, i) => (
+                <div key={turn.id} className={`turn ${selected.has(turn.id) ? "turn-selected" : ""}`}>
                   <div className="turn-header">
                     <label className="turn-check-label">
                       <input
                         type="checkbox"
                         className="turn-check"
-                        checked={selected.has(i)}
-                        onChange={() => toggleSelect(i)}
-                        aria-label={`Include "${turn.question}" in bundle`}
+                        checked={selected.has(turn.id)}
+                        onChange={() => toggleSelect(turn.id)}
+                        aria-label={`Include "${turn.question}" in export bundle`}
                       />
                       <span className="you-badge">You</span>
                       <span className="turn-question-text">{turn.question}</span>
@@ -239,6 +407,12 @@ export default function App() {
                   />
                 </div>
               ))}
+              {pendingForActiveChat && (
+                <ProgressResponse
+                  promptLabel={progress.promptLabel}
+                  stepIndex={progress.stepIndex}
+                />
+              )}
             </div>
           </>
         )}
@@ -252,23 +426,35 @@ export default function App() {
               <svg viewBox="0 0 20 20" fill="currentColor" className="bundle-icon" aria-hidden="true">
                 <path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v2a1 1 0 010 2v5a2 2 0 01-2 2H4a2 2 0 01-2-2v-5a1 1 0 010-2V6z"/>
               </svg>
-              <strong>{selectedCount} report{selectedCount !== 1 ? "s" : ""}</strong> selected for export
+              <span>
+                <strong>
+                  {selectedCount} insight{selectedCount !== 1 ? "s" : ""}
+                </strong>{" "}
+                selected from this session
+              </span>
             </div>
             {bundleError && <span className="bundle-error">{bundleError}</span>}
             <div className="bundle-buttons">
+              <button
+                className="btn bundle-cancel"
+                disabled={!!bundleExporting}
+                onClick={closeSession}
+              >
+                Cancel session
+              </button>
               <button
                 className="btn bundle-btn"
                 disabled={!!bundleExporting}
                 onClick={() => exportBundleAs("pdf")}
               >
-                {bundleExporting === "pdf" ? "Generating…" : "Export PDF"}
+                {bundleExporting === "pdf" ? "Generating..." : "Download PDF"}
               </button>
               <button
                 className="btn bundle-btn"
                 disabled={!!bundleExporting}
                 onClick={() => exportBundleAs("pptx")}
               >
-                {bundleExporting === "pptx" ? "Generating…" : "Export PPTX"}
+                {bundleExporting === "pptx" ? "Generating..." : "Download PPTX"}
               </button>
             </div>
           </div>
@@ -276,6 +462,74 @@ export default function App() {
       )}
     </div>
   );
+}
+
+function ProgressResponse({ promptLabel, stepIndex }) {
+  return (
+    <div className="turn turn-pending">
+      <div className="turn-header">
+        <div className="turn-check-label">
+          <span className="progress-spinner" aria-hidden="true" />
+          <span className="you-badge">You</span>
+          <span className="turn-question-text">{promptLabel}</span>
+        </div>
+        <span className="turn-index">Working</span>
+      </div>
+      <div className="result progress-response" aria-live="polite">
+        <div className="progress-response-heading">
+          <strong>{REPORT_PROGRESS_STEPS[stepIndex].title}</strong>
+          <span>{REPORT_PROGRESS_STEPS[stepIndex].detail}</span>
+        </div>
+        <ol className="progress-steps">
+          {REPORT_PROGRESS_STEPS.map((step, index) => {
+            const state =
+              index < stepIndex ? "done" : index === stepIndex ? "active" : "";
+            return (
+              <li key={step.title} className={state}>
+                <span className="progress-dot" aria-hidden="true" />
+                <div>
+                  <strong>{step.title}</strong>
+                  <span>{step.detail}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+function createSession() {
+  const firstChat = createChat(1);
+  return {
+    activeChatId: firstChat.id,
+    chats: [firstChat],
+  };
+}
+
+function createChat(number) {
+  return {
+    id: makeId("chat"),
+    title: `Chat ${number}`,
+    conversationId: null,
+    history: [],
+  };
+}
+
+function makeId(prefix) {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+function titleForChat(prompt) {
+  const trimmed = prompt.trim();
+  if (!trimmed) return "Chat";
+  return trimmed.length > 42 ? `${trimmed.slice(0, 39)}...` : trimmed;
 }
 
 function formatWorkspace(host) {

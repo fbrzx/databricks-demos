@@ -45,7 +45,7 @@ export default function ResultView({ result, onExport, onExportPdf, onExportPptx
   async function doExport(format) {
     setExporting(format);
     try {
-      const base = (title || question || "genie-report").slice(0, 40);
+      const base = (title || question || "genie-insight").slice(0, 40);
       await onExport(exportColumns, exportRows, format, base);
     } catch (e) {
       alert(e.message);
@@ -57,7 +57,7 @@ export default function ResultView({ result, onExport, onExportPdf, onExportPptx
   async function doExportPdf() {
     setExporting("pdf");
     try {
-      const base = (title || question || "genie-report").slice(0, 40);
+      const base = (title || question || "genie-insight").slice(0, 40);
       await onExportPdf(result, base);
     } catch (e) {
       alert(e.message);
@@ -69,7 +69,7 @@ export default function ResultView({ result, onExport, onExportPdf, onExportPptx
   async function doExportPptx() {
     setExporting("pptx");
     try {
-      const base = (title || question || "genie-report").slice(0, 40);
+      const base = (title || question || "genie-insight").slice(0, 40);
       await onExportPptx(result, base);
     } catch (e) {
       alert(e.message);
