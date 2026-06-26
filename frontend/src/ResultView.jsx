@@ -14,7 +14,7 @@ import {
 
 const MAX_TABLE_ROWS = 100;
 
-export default function ResultView({ result, onExport, onExportPdf }) {
+export default function ResultView({ result, onExport, onExportPdf, onExportPptx }) {
   const {
     title,
     description,
@@ -35,6 +35,7 @@ export default function ResultView({ result, onExport, onExportPdf }) {
   const previewRowCount = table.preview_row_count ?? tableRows.length;
   const hasTable = tableColumns.length > 0 && tableRows.length > 0;
   const hasPdfExport = result.type === "report" && Boolean(onExportPdf);
+  const hasPptxExport = result.type === "report" && Boolean(onExportPptx);
   const answerText = narrative ?? text;
   const chart = useMemo(
     () => normalizeChart(result.chart) ?? deriveChart(tableColumns, tableRows),
@@ -58,6 +59,18 @@ export default function ResultView({ result, onExport, onExportPdf }) {
     try {
       const base = (title || question || "genie-report").slice(0, 40);
       await onExportPdf(result, base);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function doExportPptx() {
+    setExporting("pptx");
+    try {
+      const base = (title || question || "genie-report").slice(0, 40);
+      await onExportPptx(result, base);
     } catch (e) {
       alert(e.message);
     } finally {
@@ -95,7 +108,7 @@ export default function ResultView({ result, onExport, onExportPdf }) {
         </div>
       )}
 
-      {(hasPdfExport || hasTable) && (
+      {(hasPdfExport || hasPptxExport || hasTable) && (
         <div className="result-actions">
           {hasTable && (
             <span className="muted">
@@ -104,18 +117,23 @@ export default function ResultView({ result, onExport, onExportPdf }) {
           )}
           <div className="spacer" />
           {hasPdfExport && (
-            <button className="btn small" disabled={exporting} onClick={doExportPdf}>
-              {exporting === "pdf" ? "…" : "Download PDF"}
+            <button className="btn small" disabled={!!exporting} onClick={doExportPdf}>
+              {exporting === "pdf" ? "…" : "PDF"}
+            </button>
+          )}
+          {hasPptxExport && (
+            <button className="btn small" disabled={!!exporting} onClick={doExportPptx}>
+              {exporting === "pptx" ? "…" : "PPTX"}
             </button>
           )}
           {hasTable && (
             <>
-            <button className="btn small" disabled={exporting} onClick={() => doExport("csv")}>
-              {exporting === "csv" ? "…" : "Download CSV"}
-            </button>
-            <button className="btn small" disabled={exporting} onClick={() => doExport("xlsx")}>
-              {exporting === "xlsx" ? "…" : "Download Excel"}
-            </button>
+              <button className="btn small" disabled={!!exporting} onClick={() => doExport("csv")}>
+                {exporting === "csv" ? "…" : "CSV"}
+              </button>
+              <button className="btn small" disabled={!!exporting} onClick={() => doExport("xlsx")}>
+                {exporting === "xlsx" ? "…" : "Excel"}
+              </button>
             </>
           )}
         </div>

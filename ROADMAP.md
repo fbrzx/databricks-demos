@@ -40,11 +40,19 @@ Completed:
   report preview flow.
 - 2026-06-26: Added branded PDF export via `POST /api/export/pdf`.
 
+- 2026-06-26: Added PPTX single-report export via `POST /api/export/pptx`.
+- 2026-06-26: Added multi-report bundle export via `POST /api/export/bundle`
+  (PDF and PPTX, one section/slide per report).
+- 2026-06-26: Redesigned frontend with Playfair Display serif headings, navy
+  topnav, skeleton loading, hover animations, and sticky bundle-export tray.
+- 2026-06-26: Added report assembly UI — checkbox per result, select-all,
+  sticky Export PDF / Export PPTX tray when reports are selected.
+
 Next development slice:
 
-- Add PowerPoint export via `POST /api/export/pptx`.
-- Add export loading/error states beyond the current per-button state.
 - Add the optional orchestrator interface starting with a no-op provider.
+- Add Gemini orchestrator behind env vars and Databricks secret resource.
+- Add HTML export option to bundle tray.
 
 ## Suggested Report Cards
 

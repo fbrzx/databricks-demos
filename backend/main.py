@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -47,7 +47,7 @@ class ReportRequest(BaseModel):
 class ExportRequest(BaseModel):
     columns: list[str]
     rows: list[list]
-    format: str = "csv"          # "csv" | "xlsx"
+    format: str = "csv"  # "csv" | "xlsx"
     filename: str | None = None
 
 
@@ -61,6 +61,12 @@ class PdfExportRequest(BaseModel):
     table: dict[str, Any] | None = None
     columns: list[str] = Field(default_factory=list)
     rows: list[list[Any]] = Field(default_factory=list)
+    filename: str | None = None
+
+
+class BundleExportRequest(BaseModel):
+    reports: list[dict[str, Any]]
+    format: str = "pdf"  # "pdf" | "pptx"
     filename: str | None = None
 
 
@@ -89,9 +95,9 @@ def get_suggestions():
 def post_ask(req: AskRequest):
     try:
         result = ask(req.question, conversation_id=req.conversation_id)
-    except RuntimeError as exc:               # config problems
+    except RuntimeError as exc:  # config problems
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:                   # noqa: BLE001 - SDK / network
+    except Exception as exc:  # noqa: BLE001 - SDK / network
         raise _genie_http_exception(exc)
     return result.to_dict()
 
@@ -112,9 +118,9 @@ def post_report(req: ReportRequest):
 
     try:
         result = ask(prompt, conversation_id=req.conversation_id)
-    except RuntimeError as exc:               # config problems
+    except RuntimeError as exc:  # config problems
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:                   # noqa: BLE001 - SDK / network
+    except Exception as exc:  # noqa: BLE001 - SDK / network
         raise _genie_http_exception(exc)
 
     return report_preview.build_report_preview(
@@ -146,7 +152,9 @@ def post_export(req: ExportRequest):
     if not req.columns:
         raise HTTPException(status_code=400, detail="No columns to export.")
 
-    base = _safe_filename(req.filename) or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+    base = (
+        _safe_filename(req.filename) or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+    )
 
     if req.format == "xlsx":
         content = exporters.to_xlsx(req.columns, req.rows)
@@ -169,12 +177,51 @@ def post_export(req: ExportRequest):
 @app.post("/api/export/pdf")
 def post_export_pdf(req: PdfExportRequest):
     content = exporters.to_pdf_report(req.model_dump())
-    base = _safe_filename(req.filename or req.title) or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+    base = (
+        _safe_filename(req.filename or req.title)
+        or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+    )
 
     return Response(
         content=content,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{base}.pdf"'},
+    )
+
+
+@app.post("/api/export/pptx")
+def post_export_pptx(req: PdfExportRequest):
+    content = exporters.to_pptx_report(req.model_dump())
+    base = (
+        _safe_filename(req.filename or req.title)
+        or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+    )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f'attachment; filename="{base}.pptx"'},
+    )
+
+
+@app.post("/api/export/bundle")
+def post_export_bundle(req: BundleExportRequest):
+    base = (
+        _safe_filename(req.filename) or f"genie-bundle-{datetime.now():%Y%m%d-%H%M%S}"
+    )
+    if req.format == "pptx":
+        content = exporters.to_pptx_bundle(req.reports)
+        media = (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+        name = f"{base}.pptx"
+    else:
+        content = exporters.to_pdf_bundle(req.reports)
+        media = "application/pdf"
+        name = f"{base}.pdf"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 
@@ -193,6 +240,7 @@ if os.path.isdir(config.FRONTEND_DIST):
         "/", StaticFiles(directory=config.FRONTEND_DIST, html=True), name="static"
     )
 else:
+
     @app.get("/")
     def _no_frontend():
         return {
