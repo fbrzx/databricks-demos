@@ -29,10 +29,12 @@ Genie Space resource injects `GENIE_SPACE_ID` and grants `Can run`.
 backend/
   main.py          FastAPI: /api/ask, /api/export, serves the built frontend
   genie_client.py  SDK wrapper -> normalized {text, sql, columns, rows}
-  exporters.py     CSV / XLSX generation
+  report_templates.py  curated report cards for /api/suggestions
+  report_preview.py  normalized report preview payloads for /api/report
+  exporters.py     CSV / XLSX / PDF generation
   config.py        env + Genie Space URL/host/id parsing
 frontend/
-  src/App.jsx      question input, suggestions, conversation thread
+  src/App.jsx      question input, report card gallery, conversation thread
   src/ResultView.jsx  table, auto bar-chart, SQL toggle, download buttons
 app.yaml           Databricks Apps run command + Genie resource wiring
 requirements.txt   Python deps
@@ -144,8 +146,11 @@ back to port 8000 locally.
 | ------ | ------------- | ----------------------------------------------- | ----------------------------- |
 | GET    | `/api/health` | —                                               | `{status}`                    |
 | GET    | `/api/config` | —                                               | `{space_configured, workspace_host, space_id}` |
+| GET    | `/api/suggestions` | —                                        | `{suggestions}`               |
+| POST   | `/api/report` | `{question? \| card_id, conversation_id?, visual_type?}` | `{title, narrative, chart, table, sql, rows, ...}` |
 | POST   | `/api/ask`    | `{question, conversation_id?}`                  | `{text, sql, columns, rows, conversation_id, ...}` |
 | POST   | `/api/export` | `{columns, rows, format: "csv"\|"xlsx", filename?}` | file download             |
+| POST   | `/api/export/pdf` | report preview payload                     | PDF file download          |
 
 ## Notes & limits
 

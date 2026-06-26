@@ -6,6 +6,12 @@ export async function getConfig() {
   return r.json();
 }
 
+export async function getSuggestions() {
+  const r = await fetch("/api/suggestions");
+  if (!r.ok) throw new Error("Failed to load suggestions");
+  return r.json();
+}
+
 export async function ask(question, conversationId) {
   const r = await fetch("/api/ask", {
     method: "POST",
@@ -14,6 +20,22 @@ export async function ask(question, conversationId) {
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.detail || "Request failed");
+  return data;
+}
+
+export async function createReport({ question, cardId, conversationId, visualType }) {
+  const r = await fetch("/api/report", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question: question ?? null,
+      card_id: cardId ?? null,
+      conversation_id: conversationId ?? null,
+      visual_type: visualType ?? null,
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || "Report request failed");
   return data;
 }
 
@@ -28,11 +50,27 @@ export async function exportResult(columns, rows, format, filename) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.detail || "Export failed");
   }
-  const blob = await r.blob();
-  const disposition = r.headers.get("Content-Disposition") || "";
-  const match = disposition.match(/filename="?([^"]+)"?/);
-  const name = match ? match[1] : `report.${format}`;
+  await downloadResponse(r, `report.${format}`);
+}
 
+export async function exportReportPdf(report, filename) {
+  const r = await fetch("/api/export/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...report, filename }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || "PDF export failed");
+  }
+  await downloadResponse(r, "report.pdf");
+}
+
+async function downloadResponse(response, fallbackName) {
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const name = match ? match[1] : fallbackName;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

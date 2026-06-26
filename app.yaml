@@ -9,6 +9,9 @@ command:
   - backend.run
 
 env:
+  - name: REPORT_MAX_PREVIEW_ROWS
+    value: "100"
+
   # Injected from the Genie Space resource attached to this app.
   # Add the resource in the app's "Edit" screen: + Add resource > Genie Space,
   # with resource key "genie-space" and permission "Can run".

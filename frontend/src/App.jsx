@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { getConfig, ask, exportResult } from "./api.js";
+import {
+  getConfig,
+  getSuggestions,
+  createReport,
+  exportReportPdf,
+  exportResult,
+} from "./api.js";
 import ResultView from "./ResultView.jsx";
-
-const SUGGESTIONS = [
-  "What were total sales last month?",
-  "Show the top 10 customers by revenue",
-  "Compare revenue by region this year vs last year",
-];
 
 export default function App() {
   const [question, setQuestion] = useState("");
@@ -16,6 +16,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [appConfig, setAppConfig] = useState(null);
   const [spaceConfigured, setSpaceConfigured] = useState(true);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
 
   useEffect(() => {
     getConfig()
@@ -24,17 +26,31 @@ export default function App() {
         setSpaceConfigured(c.space_configured);
       })
       .catch(() => {});
+    getSuggestions()
+      .then((data) => setSuggestions(data.suggestions ?? []))
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
   }, []);
 
-  async function submit(q) {
-    const text = (q ?? question).trim();
-    if (!text || loading) return;
+  async function submit(input) {
+    const card = input?.card;
+    const text = card ? "" : (input?.question ?? question).trim();
+    if ((!card && !text) || loading) return;
+
     setLoading(true);
     setError(null);
     try {
-      const result = await ask(text, conversationId);
+      const result = await createReport({
+        question: card ? null : text,
+        cardId: card?.id,
+        conversationId,
+        visualType: card?.visual_type,
+      });
       setConversationId(result.conversation_id);
-      setHistory((h) => [...h, { question: text, result }]);
+      setHistory((h) => [
+        ...h,
+        { question: card ? card.title : text, result },
+      ]);
       setQuestion("");
     } catch (e) {
       setError(e.message);
@@ -93,15 +109,34 @@ export default function App() {
         </button>
       </div>
 
-      {history.length === 0 && (
-        <div className="suggestions">
-          <span className="suggestions-label">Try:</span>
-          {SUGGESTIONS.map((s) => (
-            <button key={s} className="chip" onClick={() => submit(s)} disabled={loading}>
-              {s}
-            </button>
-          ))}
-        </div>
+      {history.length === 0 && suggestions.length > 0 && (
+        <section className="suggestion-gallery" aria-labelledby="suggestions-title">
+          <div className="section-heading">
+            <h2 id="suggestions-title">Suggested Reports</h2>
+            <span className="muted">{suggestions.length} starters</span>
+          </div>
+          <div className="suggestion-grid">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion.id}
+                className="suggestion-card"
+                onClick={() => submit({ card: suggestion })}
+                disabled={loading}
+              >
+                <span className="suggestion-title">{suggestion.title}</span>
+                <span className="suggestion-description">{suggestion.description}</span>
+                <span className="suggestion-meta">
+                  <span>{formatVisualType(suggestion.visual_type)}</span>
+                  <span>{formatExport(suggestion.preferred_export)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {history.length === 0 && suggestionsLoading && (
+        <div className="suggestions-placeholder">Loading report starters...</div>
       )}
 
       {error && <div className="banner error">{error}</div>}
@@ -113,7 +148,11 @@ export default function App() {
               <span className="you">You</span>
               {turn.question}
             </div>
-            <ResultView result={turn.result} onExport={exportResult} />
+            <ResultView
+              result={turn.result}
+              onExport={exportResult}
+              onExportPdf={exportReportPdf}
+            />
           </div>
         ))}
       </div>
@@ -134,4 +173,13 @@ function shortSpaceId(spaceId) {
   if (!spaceId) return null;
   if (spaceId.length <= 16) return spaceId;
   return `${spaceId.slice(0, 8)}...${spaceId.slice(-6)}`;
+}
+
+function formatVisualType(value) {
+  return (value || "table").replace(/_/g, " ");
+}
+
+function formatExport(value) {
+  if (!value) return "Export";
+  return `target ${value.toUpperCase()}`;
 }

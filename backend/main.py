@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +16,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, exporters
+from . import config, exporters, report_preview, report_templates
 from .genie_client import ask
 
 app = FastAPI(title="Genie Report App", version="0.1.0")
@@ -36,10 +37,30 @@ class AskRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class ReportRequest(BaseModel):
+    question: str | None = None
+    card_id: str | None = None
+    conversation_id: str | None = None
+    visual_type: str | None = None
+
+
 class ExportRequest(BaseModel):
     columns: list[str]
     rows: list[list]
     format: str = "csv"          # "csv" | "xlsx"
+    filename: str | None = None
+
+
+class PdfExportRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    narrative: str | None = None
+    text: str | None = None
+    sql: str | None = None
+    chart: dict[str, Any] | None = None
+    table: dict[str, Any] | None = None
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
     filename: str | None = None
 
 
@@ -59,6 +80,11 @@ def get_config():
     }
 
 
+@app.get("/api/suggestions")
+def get_suggestions():
+    return {"suggestions": report_templates.list_report_templates()}
+
+
 @app.post("/api/ask")
 def post_ask(req: AskRequest):
     try:
@@ -68,6 +94,36 @@ def post_ask(req: AskRequest):
     except Exception as exc:                   # noqa: BLE001 - SDK / network
         raise _genie_http_exception(exc)
     return result.to_dict()
+
+
+@app.post("/api/report")
+def post_report(req: ReportRequest):
+    template = None
+    if req.card_id:
+        template = report_templates.get_report_template(req.card_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Unknown report card.")
+
+    prompt = template.prompt if template else (req.question or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Provide a card_id or question.")
+
+    title = template.title if template else report_preview.title_from_question(prompt)
+
+    try:
+        result = ask(prompt, conversation_id=req.conversation_id)
+    except RuntimeError as exc:               # config problems
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:                   # noqa: BLE001 - SDK / network
+        raise _genie_http_exception(exc)
+
+    return report_preview.build_report_preview(
+        result,
+        title=title,
+        prompt=prompt,
+        template=template,
+        visual_type=req.visual_type,
+    )
 
 
 def _genie_http_exception(exc: Exception) -> HTTPException:
@@ -110,6 +166,18 @@ def post_export(req: ExportRequest):
     )
 
 
+@app.post("/api/export/pdf")
+def post_export_pdf(req: PdfExportRequest):
+    content = exporters.to_pdf_report(req.model_dump())
+    base = _safe_filename(req.filename or req.title) or f"genie-report-{datetime.now():%Y%m%d-%H%M%S}"
+
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{base}.pdf"'},
+    )
+
+
 def _safe_filename(name: str | None) -> str | None:
     if not name:
         return None
@@ -130,5 +198,8 @@ else:
         return {
             "message": "Frontend not built. Run `npm install && npm run build` "
             "in the frontend/ directory, or use the Vite dev server.",
-            "api": "/api/health, /api/ask, /api/export",
+            "api": (
+                "/api/health, /api/suggestions, /api/report, /api/ask, "
+                "/api/export, /api/export/pdf"
+            ),
         }

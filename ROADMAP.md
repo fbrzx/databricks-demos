@@ -24,6 +24,28 @@ Build the app into a lightweight report builder over a Genie Space.
 5. Export CSV/XLSX for detailed backing data when needed.
 6. Apply the RL visual style from the design package.
 
+## Progress
+
+Completed:
+
+- 2026-06-26: Added `backend/report_templates.py` with seven curated report
+  cards.
+- 2026-06-26: Added `GET /api/suggestions` for the report card gallery.
+- 2026-06-26: Replaced the hardcoded frontend prompt chips with a backend-driven
+  suggestion gallery.
+- 2026-06-26: Ported the RL visual tokens into `frontend/src/styles.css`.
+- 2026-06-26: Verified desktop and mobile rendering of the suggestion gallery.
+- 2026-06-26: Added a normalized report preview model and `POST /api/report`.
+- 2026-06-26: Wired free-form questions and report card clicks through the
+  report preview flow.
+- 2026-06-26: Added branded PDF export via `POST /api/export/pdf`.
+
+Next development slice:
+
+- Add PowerPoint export via `POST /api/export/pptx`.
+- Add export loading/error states beyond the current per-button state.
+- Add the optional orchestrator interface starting with a no-op provider.
+
 ## Suggested Report Cards
 
 Start with a small curated library in backend code, for example:
@@ -155,17 +177,17 @@ Start with `noop.py` so the app works without external LLM credentials.
 
 ## Implementation Order
 
-1. Add suggestion gallery and `GET /api/suggestions`.
-2. Add report preview model and `POST /api/report`.
-3. Apply RL styling tokens.
-4. Add PDF export.
+1. Done: add suggestion gallery and `GET /api/suggestions`.
+2. Done: add report preview model and `POST /api/report`.
+3. Done: apply RL styling tokens.
+4. Done: add PDF export.
 5. Add PowerPoint export.
 6. Add optional orchestrator interface.
 7. Add Gemini orchestrator behind env vars and Databricks secret resource.
 
 ## First PR Scope
 
-Recommended first PR:
+Completed first slice:
 
 - `backend/report_templates.py`
 - `GET /api/suggestions`

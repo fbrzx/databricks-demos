@@ -88,6 +88,10 @@ FRONTEND_DIST = os.getenv(
 # Max rows pulled from a Genie query result into the app (single result chunk).
 MAX_ROWS = int(os.getenv("GENIE_MAX_ROWS", "10000"))
 
+# Max rows included in the report preview table. The full normalized rows remain
+# available to CSV/XLSX export from the same response.
+REPORT_MAX_PREVIEW_ROWS = int(os.getenv("REPORT_MAX_PREVIEW_ROWS", "100"))
+
 
 def require_space_id() -> str:
     if not GENIE_SPACE_ID:
