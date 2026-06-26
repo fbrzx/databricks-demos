@@ -20,93 +20,136 @@ class ReportTemplate:
 
 REPORT_TEMPLATES: tuple[ReportTemplate, ...] = (
     ReportTemplate(
-        id="revenue-trend-month",
-        title="Revenue Trend",
-        description="Monthly revenue movement with enough history to show trend direction.",
+        id="store-period-purchase-volume",
+        title="Store Purchase Volume",
+        description="Compare purchase and responder volumes across stores and financial periods.",
         prompt=(
-            "Show revenue by month for the most recent complete 12-month period. "
-            "Include month, revenue, and any useful context for notable changes."
+            "Show aggregate purchase volume and responder volume by store for the most "
+            "recent complete financial period. Include store, purchase volume, responder "
+            "volume, and response rate."
+        ),
+        visual_type="bar",
+        preferred_export="pptx",
+        required_columns=[
+            "store",
+            "purchase_volume",
+            "responder_volume",
+            "response_rate",
+        ],
+    ),
+    ReportTemplate(
+        id="purchase-trend-period",
+        title="Purchase Trend",
+        description="Track orders, quantities, and purchase amounts over financial periods.",
+        prompt=(
+            "Show aggregate total orders, total quantity, and total purchase amount by "
+            "financial period for the latest available periods. Include period-over-period "
+            "change where available."
         ),
         visual_type="line",
         preferred_export="pptx",
-        required_columns=["month", "revenue"],
+        required_columns=[
+            "financial_period",
+            "total_orders",
+            "total_quantity",
+            "purchase_amount",
+        ],
     ),
     ReportTemplate(
-        id="top-customers-revenue",
-        title="Top Customers",
-        description="Highest-value customers ranked by revenue for account review.",
+        id="email-engagement-funnel",
+        title="Email Engagement Funnel",
+        description="Measure email opens, responses, orders, and rates by campaign period.",
         prompt=(
-            "Show the top 10 customers by revenue for the most recent complete period. "
-            "Include customer name, revenue, and rank."
-        ),
-        visual_type="bar",
-        preferred_export="xlsx",
-        required_columns=["customer", "revenue"],
-    ),
-    ReportTemplate(
-        id="regional-performance",
-        title="Regional Performance",
-        description="Compare revenue and growth across regions to highlight mix shifts.",
-        prompt=(
-            "Compare performance by region for the current year versus the prior year. "
-            "Include region, current year revenue, prior year revenue, and year-over-year change."
+            "Summarize aggregate email engagement by financial period. Include sent volume "
+            "if available, open rate, responder volume, response rate, order volume, and "
+            "purchase amount."
         ),
         visual_type="grouped_bar",
         preferred_export="pptx",
         required_columns=[
-            "region",
-            "current_year_revenue",
-            "prior_year_revenue",
-            "year_over_year_change",
+            "financial_period",
+            "open_rate",
+            "responder_volume",
+            "response_rate",
+            "order_volume",
         ],
     ),
     ReportTemplate(
-        id="category-contribution",
-        title="Category Contribution",
-        description="Revenue contribution by product or category for portfolio review.",
+        id="offer-level-effectiveness",
+        title="Offer Effectiveness",
+        description="Compare response and order performance across email offer levels.",
         prompt=(
-            "Show revenue contribution by product category for the most recent complete period. "
-            "Include category, revenue, and share of total revenue."
+            "Compare aggregate performance by offer level for the most recent complete "
+            "financial period. Include offer level, response rate, order volume, total "
+            "quantity, and purchase amount."
         ),
         visual_type="bar",
         preferred_export="pdf",
-        required_columns=["category", "revenue", "share_of_total"],
+        required_columns=[
+            "offer_level",
+            "response_rate",
+            "order_volume",
+            "total_quantity",
+            "purchase_amount",
+        ],
     ),
     ReportTemplate(
-        id="margin-outliers",
-        title="Margin Outliers",
-        description="Find customers, products, or transactions with unusually low margin.",
+        id="price-sensitivity-offer-level",
+        title="Price Sensitivity",
+        description="Assess how purchase amount and quantity vary by offer level.",
         prompt=(
-            "Identify the largest margin or cost outliers in the most recent complete period. "
-            "Include the entity, revenue, cost, margin, and why it stands out."
-        ),
-        visual_type="table",
-        preferred_export="xlsx",
-        required_columns=["entity", "revenue", "cost", "margin"],
-    ),
-    ReportTemplate(
-        id="year-over-year-change",
-        title="Year-Over-Year Change",
-        description="Largest positive and negative changes against the same period last year.",
-        prompt=(
-            "Show the largest year-over-year changes for the most relevant business metric. "
-            "Include the dimension, current period value, prior period value, and percent change."
+            "Assess aggregate price sensitivity by offer level. Include offer level, "
+            "average purchase amount, average quantity, response rate, and order volume."
         ),
         visual_type="bar",
-        preferred_export="pdf",
-        required_columns=["dimension", "current_period", "prior_period", "percent_change"],
+        preferred_export="pptx",
+        required_columns=[
+            "offer_level",
+            "average_purchase_amount",
+            "average_quantity",
+            "response_rate",
+            "order_volume",
+        ],
     ),
     ReportTemplate(
-        id="operational-exceptions",
-        title="Operational Exceptions",
-        description="Surface anomalies or exception cases that need follow-up.",
+        id="store-engagement-rates",
+        title="Store Engagement Rates",
+        description="Find stores with high or low email open and response rates.",
         prompt=(
-            "Find operational exceptions or anomalies in the most recent complete period. "
-            "Rank them by business impact and include the relevant date, entity, metric, and impact."
+            "Rank stores by aggregate email open rate and response rate for the most "
+            "recent complete financial period. Include store, open rate, response rate, "
+            "responder volume, order volume, and purchase amount."
+        ),
+        visual_type="bar",
+        preferred_export="xlsx",
+        required_columns=[
+            "store",
+            "open_rate",
+            "response_rate",
+            "responder_volume",
+            "order_volume",
+            "purchase_amount",
+        ],
+    ),
+    ReportTemplate(
+        id="store-campaign-watchlist",
+        title="Campaign Watchlist",
+        description="Surface aggregate store and campaign periods that need follow-up.",
+        prompt=(
+            "Identify store and financial-period combinations with unusually low open "
+            "rate, response rate, or order performance. Use aggregate metrics only and "
+            "include store, financial period, metric, value, benchmark, and impact."
         ),
         visual_type="table",
         preferred_export="xlsx",
-        required_columns=["date", "entity", "metric", "impact"],
+        required_columns=[
+            "store",
+            "financial_period",
+            "metric",
+            "value",
+            "benchmark",
+            "impact",
+        ],
     ),
 )
 

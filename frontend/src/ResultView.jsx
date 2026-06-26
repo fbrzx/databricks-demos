@@ -14,7 +14,13 @@ import {
 
 const MAX_TABLE_ROWS = 100;
 
-export default function ResultView({ result, onExport, onExportPdf, onExportPptx }) {
+export default function ResultView({
+  result,
+  onExport,
+  onExportPdf,
+  onExportPptx,
+  showNarrative = true,
+}) {
   const {
     title,
     description,
@@ -88,7 +94,9 @@ export default function ResultView({ result, onExport, onExportPdf, onExportPptx
       )}
 
       {error && <div className="banner error">{error}</div>}
-      {answerText && <p className="answer-text">{answerText}</p>}
+      {showNarrative && answerText && (
+        <MarkdownText text={answerText} className="answer-text" />
+      )}
 
       {sql && (
         <div className="sql-block">
@@ -161,7 +169,20 @@ export default function ResultView({ result, onExport, onExportPdf, onExportPptx
         </>
       )}
 
-      {!hasTable && !answerText && !error && <p className="muted">No tabular result returned.</p>}
+      {!hasTable && !chart && !sql && !error && (!answerText || !showNarrative) && (
+        <p className="muted">No tabular result returned.</p>
+      )}
+    </div>
+  );
+}
+
+export function MarkdownText({ text, className = "" }) {
+  const blocks = parseMarkdownBlocks(text);
+  if (!blocks.length) return null;
+
+  return (
+    <div className={`markdown-text ${className}`.trim()}>
+      {blocks.map((block, index) => renderMarkdownBlock(block, index))}
     </div>
   );
 }
@@ -207,6 +228,217 @@ function ReportChart({ chart }) {
 function format(v) {
   if (v === null || v === undefined) return "";
   return String(v);
+}
+
+function parseMarkdownBlocks(text) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      const code = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        code.push(lines[i]);
+        i += 1;
+      }
+      blocks.push({ type: "code", text: code.join("\n") });
+      i += i < lines.length ? 1 : 0;
+      continue;
+    }
+
+    if (isMarkdownTable(lines, i)) {
+      const tableLines = [lines[i]];
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        tableLines.push(lines[i]);
+        i += 1;
+      }
+      blocks.push({ type: "table", rows: tableLines.map(splitMarkdownTableRow) });
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      blocks.push({
+        type: "heading",
+        level: heading[1].length,
+        text: heading[2].trim(),
+      });
+      i += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i += 1;
+      }
+      blocks.push({ type: "list", ordered: false, items });
+      continue;
+    }
+
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\d+[.)]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+[.)]\s+/, ""));
+        i += 1;
+      }
+      blocks.push({ type: "list", ordered: true, items });
+      continue;
+    }
+
+    const paragraph = [trimmed];
+    i += 1;
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !lines[i].trim().startsWith("```") &&
+      !isMarkdownTable(lines, i) &&
+      !/^(#{1,3})\s+/.test(lines[i].trim()) &&
+      !/^[-*]\s+/.test(lines[i].trim()) &&
+      !/^\d+[.)]\s+/.test(lines[i].trim())
+    ) {
+      paragraph.push(lines[i].trim());
+      i += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+  }
+
+  return blocks;
+}
+
+function renderMarkdownBlock(block, index) {
+  if (block.type === "heading") {
+    const Tag = block.level === 1 ? "h4" : block.level === 2 ? "h5" : "h6";
+    return <Tag key={index}>{renderInlineMarkdown(block.text, `h-${index}`)}</Tag>;
+  }
+
+  if (block.type === "list") {
+    const Tag = block.ordered ? "ol" : "ul";
+    return (
+      <Tag key={index}>
+        {block.items.map((item, itemIndex) => (
+          <li key={itemIndex}>{renderInlineMarkdown(item, `li-${index}-${itemIndex}`)}</li>
+        ))}
+      </Tag>
+    );
+  }
+
+  if (block.type === "code") {
+    return (
+      <pre key={index} className="markdown-code">
+        <code>{block.text}</code>
+      </pre>
+    );
+  }
+
+  if (block.type === "table") {
+    const [head, ...body] = block.rows;
+    return (
+      <div key={index} className="markdown-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {head.map((cell, cellIndex) => (
+                <th key={cellIndex}>{renderInlineMarkdown(cell, `th-${index}-${cellIndex}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <td key={cellIndex}>
+                    {renderInlineMarkdown(cell, `td-${index}-${rowIndex}-${cellIndex}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return <p key={index}>{renderInlineMarkdown(block.text, `p-${index}`)}</p>;
+}
+
+function renderInlineMarkdown(text, keyPrefix) {
+  const pattern = /(`[^`]+`|\*\*[^*]+?\*\*|__[^_]+?__|\[[^\]]+?\]\([^)]+?\))/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  let partIndex = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    const key = `${keyPrefix}-${partIndex}`;
+    if (token.startsWith("`")) {
+      parts.push(<code key={key}>{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("**") || token.startsWith("__")) {
+      parts.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+    } else {
+      parts.push(renderMarkdownLink(token, key));
+    }
+
+    lastIndex = match.index + token.length;
+    partIndex += 1;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
+}
+
+function renderMarkdownLink(token, key) {
+  const match = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+  if (!match) return token;
+
+  const href = match[2].trim();
+  const isSafeHref = /^(https?:|mailto:)/i.test(href);
+  if (!isSafeHref) return match[1];
+
+  return (
+    <a key={key} href={href} target="_blank" rel="noreferrer">
+      {match[1]}
+    </a>
+  );
+}
+
+function isMarkdownTable(lines, index) {
+  const current = lines[index]?.trim();
+  const divider = lines[index + 1]?.trim();
+  return Boolean(
+    current?.includes("|") &&
+      divider &&
+      /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(divider)
+  );
+}
+
+function splitMarkdownTableRow(row) {
+  return row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
 }
 
 function normalizeChart(chart) {

@@ -146,7 +146,9 @@ back to port 8000 locally.
 | ------ | ------------- | ----------------------------------------------- | ----------------------------- |
 | GET    | `/api/health` | —                                               | `{status}`                    |
 | GET    | `/api/config` | —                                               | `{space_configured, workspace_host, space_id}` |
-| GET    | `/api/suggestions` | —                                        | `{suggestions}`               |
+| GET    | `/api/suggestions` | —                                        | `{suggestions, source, cached_at, last_error}` |
+| POST   | `/api/suggestions` | `{suggestions? \| raw?}`                 | replaces cached starters      |
+| POST   | `/api/suggestions/refresh` | —                                | refreshes cached starters from Genie |
 | POST   | `/api/report` | `{question? \| card_id, conversation_id?, visual_type?}` | `{title, narrative, chart, table, sql, rows, ...}` |
 | POST   | `/api/ask`    | `{question, conversation_id?}`                  | `{text, sql, columns, rows, conversation_id, ...}` |
 | POST   | `/api/export` | `{columns, rows, format: "csv"\|"xlsx", filename?}` | file download             |
@@ -156,6 +158,10 @@ back to port 8000 locally.
 
 - The Genie Conversation API allows ~5 questions/minute/workspace on the free
   tier. Add retry/backoff if you expect heavier use.
+- Starter cards are served from an in-memory cache. Startup uses curated
+  defaults unless `GENIE_STARTERS_JSON`, `GENIE_STARTERS_FILE`, or
+  `GENIE_STARTERS_REFRESH_ON_STARTUP=true` is set. You can also refresh on
+  demand with `POST /api/suggestions/refresh`.
 - The app reads the first result chunk (up to `GENIE_MAX_ROWS`, default 10k).
   Very large results would need chunk pagination.
 - Genie returns tabular data, not rendered charts — the app derives a simple

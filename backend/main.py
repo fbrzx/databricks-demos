@@ -16,7 +16,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, exporters, report_preview, report_templates
+from . import config, exporters, report_preview, suggestion_cache
 from .genie_client import ask
 
 app = FastAPI(title="Genie Report App", version="0.1.0")
@@ -70,6 +70,17 @@ class BundleExportRequest(BaseModel):
     filename: str | None = None
 
 
+class SuggestionsOverrideRequest(BaseModel):
+    suggestions: list[Any] | None = None
+    raw: str | None = None
+
+
+# ----- Startup ------------------------------------------------------------- #
+@app.on_event("startup")
+def load_suggestions_cache():
+    suggestion_cache.load_startup_suggestions()
+
+
 # ----- API routes ---------------------------------------------------------- #
 @app.get("/api/health")
 def health():
@@ -88,7 +99,30 @@ def get_config():
 
 @app.get("/api/suggestions")
 def get_suggestions():
-    return {"suggestions": report_templates.list_report_templates()}
+    return suggestion_cache.response()
+
+
+@app.post("/api/suggestions")
+def post_suggestions(req: SuggestionsOverrideRequest):
+    payload = req.suggestions if req.suggestions is not None else req.raw
+    if payload is None:
+        raise HTTPException(status_code=400, detail="Provide suggestions or raw JSON.")
+    try:
+        return suggestion_cache.replace_suggestions(payload, source="manual")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/suggestions/refresh")
+def post_suggestions_refresh():
+    try:
+        return suggestion_cache.refresh_from_genie()
+    except RuntimeError as exc:  # config problems
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:  # malformed/empty Genie response
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - SDK / network
+        raise _genie_http_exception(exc)
 
 
 @app.post("/api/ask")
@@ -106,7 +140,7 @@ def post_ask(req: AskRequest):
 def post_report(req: ReportRequest):
     template = None
     if req.card_id:
-        template = report_templates.get_report_template(req.card_id)
+        template = suggestion_cache.get_suggestion(req.card_id)
         if not template:
             raise HTTPException(status_code=404, detail="Unknown report card.")
 
@@ -274,7 +308,8 @@ else:
             "message": "Frontend not built. Run `npm install && npm run build` "
             "in the frontend/ directory, or use the Vite dev server.",
             "api": (
-                "/api/health, /api/suggestions, /api/report, /api/ask, "
-                "/api/export, /api/export/pdf"
+                "/api/health, /api/suggestions, /api/suggestions/refresh, "
+                "/api/report, /api/ask, /api/export, /api/export/pdf, "
+                "/api/export/pptx, /api/export/bundle"
             ),
         }

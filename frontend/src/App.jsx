@@ -8,7 +8,7 @@ import {
   exportResult,
   exportBundle,
 } from "./api.js";
-import ResultView from "./ResultView.jsx";
+import ResultView, { MarkdownText } from "./ResultView.jsx";
 
 const REPORT_PROGRESS_STEPS = [
   {
@@ -212,7 +212,7 @@ export default function App() {
   const spaceLabel = shortSpaceId(appConfig?.space_id);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${selectedCount > 0 ? "has-bundle" : ""}`}>
       {/* ── Top navigation bar ────────────────────────────────────────── */}
       <nav className="topnav">
         <div className="topnav-brand">
@@ -234,7 +234,7 @@ export default function App() {
             </div>
           )}
           {sessionHasWork && (
-            <button className="btn ghost sm" onClick={closeSession} disabled={loading}>
+            <button className="btn topnav-session-btn" onClick={closeSession} disabled={loading}>
               New session
             </button>
           )}
@@ -303,32 +303,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Ask bar ───────────────────────────────────────────────────── */}
-        <div className="ask-section">
-          <div className="ask-bar">
-            <input
-              className="ask-input"
-              placeholder={
-                activeChat?.conversationId
-                  ? "Ask a follow-up..."
-                  : "Ask Genie anything..."
-              }
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              disabled={loading}
-            />
-            <button
-              className="btn primary"
-              onClick={() => submit()}
-              disabled={loading || !question.trim()}
-            >
-              {loading ? <span className="spinner" /> : null}
-              {loading ? "Generating..." : activeChat?.conversationId ? "Follow up" : "Ask"}
-            </button>
-          </div>
-        </div>
-
         {error && <div className="banner error">{error}</div>}
 
         {/* ── Suggestion gallery (empty state) ─────────────────────────── */}
@@ -384,27 +358,50 @@ export default function App() {
 
             <div className="thread">
               {activeChat.history.map((turn, i) => (
-                <div key={turn.id} className={`turn ${selected.has(turn.id) ? "turn-selected" : ""}`}>
-                  <div className="turn-header">
-                    <label className="turn-check-label">
-                      <input
-                        type="checkbox"
-                        className="turn-check"
-                        checked={selected.has(turn.id)}
-                        onChange={() => toggleSelect(turn.id)}
-                        aria-label={`Include "${turn.question}" in export bundle`}
-                      />
-                      <span className="you-badge">You</span>
-                      <span className="turn-question-text">{turn.question}</span>
-                    </label>
-                    <span className="turn-index">#{i + 1}</span>
+                <div key={turn.id} className="chat-exchange">
+                  <div className="chat-message user-message">
+                    <span className="message-label">You</span>
+                    <div className="message-bubble user-bubble">
+                      {turn.question}
+                    </div>
                   </div>
-                  <ResultView
-                    result={turn.result}
-                    onExport={exportResult}
-                    onExportPdf={exportReportPdf}
-                    onExportPptx={exportReportPptx}
-                  />
+
+                  {getResultText(turn.result) ? (
+                    <div className="chat-message assistant-message">
+                      <span className="message-label">Genie</span>
+                      <div className="message-bubble assistant-bubble">
+                        <MarkdownText text={getResultText(turn.result)} />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <section
+                    className={`insight-artifact ${
+                      selected.has(turn.id) ? "artifact-selected" : ""
+                    }`}
+                    aria-label={`Insight ${i + 1}`}
+                  >
+                    <div className="artifact-toolbar">
+                      <label className="artifact-select">
+                        <input
+                          type="checkbox"
+                          className="artifact-check"
+                          checked={selected.has(turn.id)}
+                          onChange={() => toggleSelect(turn.id)}
+                          aria-label={`Include "${turn.question}" in export bundle`}
+                        />
+                        <span>Include in export</span>
+                      </label>
+                      <span className="artifact-index">Insight #{i + 1}</span>
+                    </div>
+                    <ResultView
+                      result={turn.result}
+                      onExport={exportResult}
+                      onExportPdf={exportReportPdf}
+                      onExportPptx={exportReportPptx}
+                      showNarrative={false}
+                    />
+                  </section>
                 </div>
               ))}
               {pendingForActiveChat && (
@@ -417,6 +414,32 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* ── Persistent chat composer ──────────────────────────────────── */}
+      <footer className="ask-section" aria-label="Ask Genie">
+        <div className="ask-bar">
+          <input
+            className="ask-input"
+            placeholder={
+              activeChat?.conversationId
+                ? "Ask a follow-up..."
+                : "Ask Genie anything..."
+            }
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            disabled={loading}
+          />
+          <button
+            className="btn primary"
+            onClick={() => submit()}
+            disabled={loading || !question.trim()}
+          >
+            {loading ? <span className="spinner" /> : null}
+            {loading ? "Generating..." : activeChat?.conversationId ? "Follow up" : "Ask"}
+          </button>
+        </div>
+      </footer>
 
       {/* ── Bundle export tray (sticky bottom) ───────────────────────── */}
       {selectedCount > 0 && (
@@ -435,13 +458,6 @@ export default function App() {
             </div>
             {bundleError && <span className="bundle-error">{bundleError}</span>}
             <div className="bundle-buttons">
-              <button
-                className="btn bundle-cancel"
-                disabled={!!bundleExporting}
-                onClick={closeSession}
-              >
-                Cancel session
-              </button>
               <button
                 className="btn bundle-btn"
                 disabled={!!bundleExporting}
@@ -466,35 +482,42 @@ export default function App() {
 
 function ProgressResponse({ promptLabel, stepIndex }) {
   return (
-    <div className="turn turn-pending">
-      <div className="turn-header">
-        <div className="turn-check-label">
-          <span className="progress-spinner" aria-hidden="true" />
-          <span className="you-badge">You</span>
-          <span className="turn-question-text">{promptLabel}</span>
+    <div className="chat-exchange pending-exchange">
+      <div className="chat-message user-message">
+        <span className="message-label">You</span>
+        <div className="message-bubble user-bubble">
+          {promptLabel}
         </div>
-        <span className="turn-index">Working</span>
       </div>
-      <div className="result progress-response" aria-live="polite">
-        <div className="progress-response-heading">
-          <strong>{REPORT_PROGRESS_STEPS[stepIndex].title}</strong>
-          <span>{REPORT_PROGRESS_STEPS[stepIndex].detail}</span>
+      <div className="insight-artifact artifact-pending" aria-live="polite">
+        <div className="artifact-toolbar">
+          <div className="artifact-status">
+            <span className="progress-spinner" aria-hidden="true" />
+            <span>Building insight</span>
+          </div>
+          <span className="artifact-index">Working</span>
         </div>
-        <ol className="progress-steps">
-          {REPORT_PROGRESS_STEPS.map((step, index) => {
-            const state =
-              index < stepIndex ? "done" : index === stepIndex ? "active" : "";
-            return (
-              <li key={step.title} className={state}>
-                <span className="progress-dot" aria-hidden="true" />
-                <div>
-                  <strong>{step.title}</strong>
-                  <span>{step.detail}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <div className="result progress-response">
+          <div className="progress-response-heading">
+            <strong>{REPORT_PROGRESS_STEPS[stepIndex].title}</strong>
+            <span>{REPORT_PROGRESS_STEPS[stepIndex].detail}</span>
+          </div>
+          <ol className="progress-steps">
+            {REPORT_PROGRESS_STEPS.map((step, index) => {
+              const state =
+                index < stepIndex ? "done" : index === stepIndex ? "active" : "";
+              return (
+                <li key={step.title} className={state}>
+                  <span className="progress-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{step.title}</strong>
+                    <span>{step.detail}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       </div>
     </div>
   );
@@ -530,6 +553,10 @@ function titleForChat(prompt) {
   const trimmed = prompt.trim();
   if (!trimmed) return "Chat";
   return trimmed.length > 42 ? `${trimmed.slice(0, 39)}...` : trimmed;
+}
+
+function getResultText(result) {
+  return result?.narrative ?? result?.text ?? "";
 }
 
 function formatWorkspace(host) {

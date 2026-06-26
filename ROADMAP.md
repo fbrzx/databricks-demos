@@ -31,6 +31,8 @@ Completed:
 - 2026-06-26: Added `backend/report_templates.py` with seven curated report
   cards.
 - 2026-06-26: Added `GET /api/suggestions` for the report card gallery.
+- 2026-06-26: Added cached starter suggestions with manual JSON/file override
+  support and opt-in Genie refresh.
 - 2026-06-26: Replaced the hardcoded frontend prompt chips with a backend-driven
   suggestion gallery.
 - 2026-06-26: Ported the RL visual tokens into `frontend/src/styles.css`.
@@ -89,7 +91,9 @@ Add these modules and endpoints:
 - `backend/report_templates.py`
   - Static curated cards and prompt templates.
 - `GET /api/suggestions`
-  - Returns available report/query cards.
+  - Returns cached report/query cards.
+  - Can refresh from Genie on demand or through opt-in startup refresh.
+  - Supports manual JSON/file overrides for pinned demos.
 - `POST /api/report`
   - Accepts a card ID or free-form question.
   - Calls Genie.
