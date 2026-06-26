@@ -52,7 +52,11 @@ def health():
 @app.get("/api/config")
 def get_config():
     """Lets the frontend show a helpful message if no space is wired up yet."""
-    return {"space_configured": bool(config.GENIE_SPACE_ID)}
+    return {
+        "space_configured": bool(config.GENIE_SPACE_ID),
+        "workspace_host": config.DATABRICKS_HOST,
+        "space_id": config.GENIE_SPACE_ID,
+    }
 
 
 @app.post("/api/ask")
@@ -62,8 +66,23 @@ def post_ask(req: AskRequest):
     except RuntimeError as exc:               # config problems
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:                   # noqa: BLE001 - SDK / network
-        raise HTTPException(status_code=502, detail=f"Genie request failed: {exc}")
+        raise _genie_http_exception(exc)
     return result.to_dict()
+
+
+def _genie_http_exception(exc: Exception) -> HTTPException:
+    detail = str(exc)
+    if "cannot configure default credentials" in detail or "default auth:" in detail:
+        host = config.DATABRICKS_HOST or "your Databricks workspace"
+        return HTTPException(
+            status_code=401,
+            detail=(
+                "Databricks authentication is not configured. Run "
+                f"`databricks auth login --host {host}` locally, or set "
+                "DATABRICKS_HOST and DATABRICKS_TOKEN."
+            ),
+        )
+    return HTTPException(status_code=502, detail=f"Genie request failed: {exc}")
 
 
 @app.post("/api/export")

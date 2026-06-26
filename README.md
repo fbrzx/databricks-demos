@@ -30,7 +30,7 @@ backend/
   main.py          FastAPI: /api/ask, /api/export, serves the built frontend
   genie_client.py  SDK wrapper -> normalized {text, sql, columns, rows}
   exporters.py     CSV / XLSX generation
-  config.py        env + Genie Space id
+  config.py        env + Genie Space URL/host/id parsing
 frontend/
   src/App.jsx      question input, suggestions, conversation thread
   src/ResultView.jsx  table, auto bar-chart, SQL toggle, download buttons
@@ -49,11 +49,16 @@ Genie Space.
    databricks auth login --host https://your-workspace.cloud.databricks.com
    ```
 
-2. **Point at your Genie Space** (copy the ID from the Genie Space URL):
+2. **Point at your Genie Space**. You can paste the full Genie room URL into
+   `.env`; the app derives both the Databricks host and Space ID from it:
 
    ```bash
-   export GENIE_SPACE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   cp .env.example .env
+   # edit .env:
+   GENIE_SPACE_URL=https://your-workspace.cloud.databricks.com/genie/rooms/<space-id>?o=<workspace-id>
    ```
+
+   Alternatively, set `DATABRICKS_HOST` and `GENIE_SPACE_ID` directly.
 
 3. **Backend** (terminal 1):
 
@@ -75,46 +80,68 @@ serve everything from http://localhost:8000 — see below.)
 
 ## Deploy to Databricks Apps
 
-1. **Build the frontend** so FastAPI can serve it:
+1. **Authenticate to the target workspace:**
 
    ```bash
-   cd frontend && npm install && npm run build && cd ..
+   databricks auth login --host https://your-workspace.cloud.databricks.com
    ```
 
-   This produces `frontend/dist/`, which `backend/main.py` serves as static
-   files. (Note: `dist/` is git-ignored — make sure it's present in the
-   directory you deploy.)
-
-2. **Create the app** (CLI or UI):
+2. **Deploy with the Makefile shortcut:**
 
    ```bash
-   databricks apps create genie-reports
+   make deploy
    ```
 
-3. **Sync the code and deploy:**
+   By default this creates/deploys an app named `genie-reports`, stages a clean
+   deploy folder at `/tmp/genie-reports-deploy`, syncs it to
+   `/Workspace/Users/$USER/genie-reports`, and deploys from that workspace path.
+   Override those when needed:
 
    ```bash
-   databricks sync --full . /Workspace/Users/<you>/genie-reports
-   databricks apps deploy genie-reports \
-     --source-code-path /Workspace/Users/<you>/genie-reports
+   make deploy APP_NAME=my-genie-app \
+     DEPLOY_PATH=/Workspace/Users/<you>/my-genie-app
    ```
 
-4. **Attach the Genie Space resource** in the app's **Edit** screen:
+   The shortcut builds `frontend/dist/` and stages only deployable files, so
+   local-only files such as `.env`, `.venv`, and `node_modules` are not synced.
+
+   If this repo is already imported as a Databricks Git folder and you have
+   pulled the latest commit there, deploy directly from that Workspace path:
+
+   ```bash
+   make deploy-from-workspace \
+     WORKSPACE_SOURCE=/Workspace/Users/<you>/<repo-folder>
+   ```
+
+   The root `package.json` delegates its build to `frontend/`, so Databricks
+   Apps can build the Vite frontend from the Git folder before starting the
+   FastAPI app.
+
+3. **Attach the Genie Space resource** in the app's **Edit** screen:
    **+ Add resource → Genie Space**, pick your space, permission **Can run**,
    resource key **`genie-space`** (matches `app.yaml`).
 
-5. **Grant data access.** The app's service principal needs `USE CATALOG`,
+4. **Grant data access.** The app's service principal needs `USE CATALOG`,
    `USE SCHEMA`, and `SELECT` on the tables the Genie Space queries, plus
    `CAN USE` on its SQL warehouse.
 
-The app starts via the `command` in `app.yaml` (uvicorn on port 8000).
+Useful deploy targets:
+
+- `make deploy-info` shows the current app name and workspace path.
+- `make deploy-stage` only builds and stages the deploy folder.
+- `make deploy-from-workspace` deploys from an existing Databricks Workspace or
+  Git folder path without local sync.
+- `make deploy-logs` follows Databricks app logs.
+
+The app starts via the `command` in `app.yaml`; `backend.run` reads
+`DATABRICKS_APP_PORT` in Databricks and falls back to port 8000 locally.
 
 ## API
 
 | Method | Path          | Body                                            | Returns                       |
 | ------ | ------------- | ----------------------------------------------- | ----------------------------- |
 | GET    | `/api/health` | —                                               | `{status}`                    |
-| GET    | `/api/config` | —                                               | `{space_configured}`          |
+| GET    | `/api/config` | —                                               | `{space_configured, workspace_host, space_id}` |
 | POST   | `/api/ask`    | `{question, conversation_id?}`                  | `{text, sql, columns, rows, conversation_id, ...}` |
 | POST   | `/api/export` | `{columns, rows, format: "csv"\|"xlsx", filename?}` | file download             |
 

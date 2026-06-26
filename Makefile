@@ -16,6 +16,12 @@ PIP         := $(VENV_BIN)/pip
 UVICORN     := $(VENV_BIN)/uvicorn
 PORT        ?= 8000
 FRONTEND    := frontend
+APP_NAME    ?= genie-reports
+DEPLOY_STAGE ?= /tmp/$(APP_NAME)-deploy
+DEPLOY_PATH ?= /Workspace/Users/$(USER)/$(APP_NAME)
+WORKSPACE_SOURCE ?= $(DEPLOY_PATH)
+DBX_PROFILE ?= $(DATABRICKS_CONFIG_PROFILE)
+DBX_PROFILE_ARG = $(if $(DBX_PROFILE),--profile $(DBX_PROFILE),)
 
 # Use bash so `source` etc. behave predictably.
 SHELL := /bin/bash
@@ -32,8 +38,8 @@ endif
 # ---- Help -------------------------------------------------------------------
 .PHONY: help
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
 
 # ---- Setup ------------------------------------------------------------------
 .PHONY: install
@@ -53,13 +59,13 @@ install-frontend: ## Install frontend npm deps
 
 # ---- Run --------------------------------------------------------------------
 .PHONY: check-env
-check-env: ## Warn (not fail) if GENIE_SPACE_ID is unset
-	@if [ -z "$$GENIE_SPACE_ID" ]; then \
-		echo "WARNING: GENIE_SPACE_ID is not set — the app will boot, but"; \
-		echo "  live questions (/api/ask) will return 400 until you set it:"; \
-		echo "  export GENIE_SPACE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; \
+check-env: ## Warn (not fail) if Genie Space config is unset
+	@if [ -z "$$GENIE_SPACE_ID" ] && [ -z "$$GENIE_SPACE_URL" ]; then \
+		echo "WARNING: no Genie Space is configured — the app will boot, but"; \
+		echo "  live questions (/api/ask) will return 400 until you set one:"; \
+		echo "  export GENIE_SPACE_URL=https://your-workspace.cloud.databricks.com/genie/rooms/<space-id>"; \
 	else \
-		echo "GENIE_SPACE_ID is set."; \
+		echo "Genie Space config is set."; \
 	fi
 
 .PHONY: smoke
@@ -97,6 +103,61 @@ build: ## Build frontend into frontend/dist (served by FastAPI)
 .PHONY: serve
 serve: check-env build ## Build frontend, then serve everything from FastAPI (:8000)
 	$(UVICORN) backend.main:app --host 0.0.0.0 --port $(PORT)
+
+# ---- Deploy -----------------------------------------------------------------
+.PHONY: deploy-info
+deploy-info: ## Show Databricks deployment settings
+	@echo "APP_NAME=$(APP_NAME)"
+	@echo "DEPLOY_STAGE=$(DEPLOY_STAGE)"
+	@echo "DEPLOY_PATH=$(DEPLOY_PATH)"
+	@echo "WORKSPACE_SOURCE=$(WORKSPACE_SOURCE)"
+	@if [ -n "$(DBX_PROFILE)" ]; then echo "DBX_PROFILE=$(DBX_PROFILE)"; fi
+
+.PHONY: deploy-check
+deploy-check: ## Verify Databricks CLI authentication
+	databricks $(DBX_PROFILE_ARG) current-user me >/dev/null
+
+.PHONY: deploy-stage
+deploy-stage: build ## Build and stage deployable files in /tmp
+	rm -rf "$(DEPLOY_STAGE)"
+	mkdir -p "$(DEPLOY_STAGE)"
+	cp -R backend "$(DEPLOY_STAGE)/backend"
+	cp -R "$(FRONTEND)" "$(DEPLOY_STAGE)/frontend"
+	cp app.yaml package.json package-lock.json requirements.txt README.md "$(DEPLOY_STAGE)/"
+	rm -rf "$(DEPLOY_STAGE)/frontend/node_modules"
+	find "$(DEPLOY_STAGE)" -type d -name __pycache__ -prune -exec rm -rf {} +
+	find "$(DEPLOY_STAGE)" -name '*.pyc' -delete
+	@echo "Staged deployable app source in $(DEPLOY_STAGE)"
+
+.PHONY: deploy-create
+deploy-create: ## Create the Databricks app if it does not already exist
+	@if databricks $(DBX_PROFILE_ARG) apps get "$(APP_NAME)" >/dev/null 2>&1; then \
+		echo "Databricks app $(APP_NAME) already exists."; \
+	else \
+		databricks $(DBX_PROFILE_ARG) apps create "$(APP_NAME)" \
+			--description "Genie Reports"; \
+	fi
+
+.PHONY: deploy-sync
+deploy-sync: deploy-stage ## Sync staged app source to Databricks Workspace files
+	databricks $(DBX_PROFILE_ARG) sync --full "$(DEPLOY_STAGE)" "$(DEPLOY_PATH)"
+
+.PHONY: deploy-app
+deploy-app: deploy-sync ## Deploy the Databricks app from DEPLOY_PATH
+	@echo "One-time requirement: attach Genie Space resource key 'genie-space' with permission 'Can run'."
+	databricks $(DBX_PROFILE_ARG) apps deploy "$(APP_NAME)" --source-code-path "$(DEPLOY_PATH)"
+
+.PHONY: deploy
+deploy: deploy-check deploy-create deploy-app ## Build, sync, and deploy to Databricks Apps
+
+.PHONY: deploy-from-workspace
+deploy-from-workspace: deploy-check deploy-create ## Deploy from an existing Workspace/Git folder path
+	@echo "One-time requirement: attach Genie Space resource key 'genie-space' with permission 'Can run'."
+	databricks $(DBX_PROFILE_ARG) apps deploy "$(APP_NAME)" --source-code-path "$(WORKSPACE_SOURCE)"
+
+.PHONY: deploy-logs
+deploy-logs: ## Tail Databricks app logs
+	databricks $(DBX_PROFILE_ARG) apps logs "$(APP_NAME)" --follow
 
 # ---- Housekeeping -----------------------------------------------------------
 .PHONY: clean

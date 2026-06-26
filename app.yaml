@@ -1,15 +1,12 @@
 # Databricks Apps configuration.
 # Docs: https://docs.databricks.com/aws/en/dev-tools/databricks-apps/
 
-# The app is a single uvicorn process serving both the API and the built
-# React frontend (frontend/dist). Databricks Apps routes traffic to port 8000.
+# The app is a single uvicorn process serving both the API and the built React
+# frontend (frontend/dist). backend.run reads DATABRICKS_APP_PORT at runtime.
 command:
-  - uvicorn
-  - backend.main:app
-  - --host
-  - "0.0.0.0"
-  - --port
-  - "8000"
+  - python
+  - -m
+  - backend.run
 
 env:
   # Injected from the Genie Space resource attached to this app.

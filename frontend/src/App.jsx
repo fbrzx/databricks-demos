@@ -14,11 +14,15 @@ export default function App() {
   const [history, setHistory] = useState([]); // [{question, result}]
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [appConfig, setAppConfig] = useState(null);
   const [spaceConfigured, setSpaceConfigured] = useState(true);
 
   useEffect(() => {
     getConfig()
-      .then((c) => setSpaceConfigured(c.space_configured))
+      .then((c) => {
+        setAppConfig(c);
+        setSpaceConfigured(c.space_configured);
+      })
       .catch(() => {});
   }, []);
 
@@ -45,12 +49,22 @@ export default function App() {
     setError(null);
   }
 
+  const workspaceLabel = formatWorkspace(appConfig?.workspace_host);
+  const spaceLabel = shortSpaceId(appConfig?.space_id);
+
   return (
     <div className="app">
       <header className="app-header">
         <div>
           <h1>Genie Reports</h1>
           <p className="subtitle">Ask questions in plain English. Get tables, charts, and downloads.</p>
+          {(workspaceLabel || spaceLabel) && (
+            <div className="connection-pill" title={appConfig?.space_id || ""}>
+              <span className="status-dot" aria-hidden="true" />
+              {workspaceLabel && <span>{workspaceLabel}</span>}
+              {spaceLabel && <span className="space-id">{spaceLabel}</span>}
+            </div>
+          )}
         </div>
         {history.length > 0 && (
           <button className="btn ghost" onClick={reset}>New conversation</button>
@@ -59,8 +73,9 @@ export default function App() {
 
       {!spaceConfigured && (
         <div className="banner warn">
-          No Genie Space is configured. Set <code>GENIE_SPACE_ID</code> (locally) or
-          attach a Genie Space resource (on Databricks Apps), then reload.
+          No Genie Space is configured. Set <code>GENIE_SPACE_URL</code> or{" "}
+          <code>GENIE_SPACE_ID</code> locally, or attach a Genie Space resource
+          on Databricks Apps, then reload.
         </div>
       )}
 
@@ -104,4 +119,19 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+function formatWorkspace(host) {
+  if (!host) return null;
+  try {
+    return new URL(host).host;
+  } catch {
+    return host.replace(/^https?:\/\//, "");
+  }
+}
+
+function shortSpaceId(spaceId) {
+  if (!spaceId) return null;
+  if (spaceId.length <= 16) return spaceId;
+  return `${spaceId.slice(0, 8)}...${spaceId.slice(-6)}`;
 }
